@@ -18,6 +18,12 @@ typedef struct _waiting_vehicle {
     // TODO: Add fields to represent state waiting vehcicles
 } waiting_vehicle;
 
+// Shared key resouces: direction of traffic on the brdige, vehicles on the bridge, and waiting queues 
+static int bridge_direction = -1; // Direction of vehicles currently on the bridge (-1 for none, 0 for north, 1 for south)
+static int bridge_count = 0; // Number of vehicles currently on the bridge
+static int north_waiting_count = 0; // Number of vehicles waiting to cross from the north
+static int south_waiting_count = 0; // Number of vehicles waiting to cross from the south
+
 // Queues for vehicles waiting to cross the bridge
 waiting_vehicle north_waiting[13];
 waiting_vehicle south_waiting[13];
