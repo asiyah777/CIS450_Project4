@@ -1,3 +1,7 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 // In Gallap Park in Ann Arbor, there is a one-lane bridge. Vehicles arriving from the north
 // and south must share this single lane. Vehicles heading in the same direction may cross
 // simultaneously, but vehicles heading in opposite directions cannot. Additionally, if more
@@ -9,7 +13,20 @@ typedef struct _vehicle_info {
     double inter_arrival_t; // inter-arrival time before next vehicle
 } vehicle_info; 
 
+// Semaphore 
+typedef struct _waiting_vehicle {
+    // TODO: Add fields to represent state waiting vehcicles
+} waiting_vehicle;
 
+// Queues for vehicles waiting to cross the bridge
+waiting_vehicle north_waiting[13];
+waiting_vehicle south_waiting[13];
+
+void enqueue(waiting_vehicle *queue, vehicle_info *vehicle) {
+}
+
+void dequeue(waiting_vehicle *queue, vehicle_info *vehicle) {
+}
 
 void* VehicleAction(void* arg) {
     vehicle_info *ti = (vehicle_info *) arg;
@@ -17,7 +34,6 @@ void* VehicleAction(void* arg) {
     CrossBridge(ti);
     ExitBridge(ti);
 }
-
 
 //Blocks the calling vehicle until it is safe to cross. There are two
 // crossing policies:
@@ -44,6 +60,20 @@ void Spin(int howlong) {
 }
 
 int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s <crossing_policy>\n", argv[0]);
+        exit(1);
+    }
+
+    if (strcmp(argv[1], "greedy") == 0) {
+        printf("Using greedy crossing policy\n");
+    } else if (strcmp(argv[1], "fcfs") == 0) {
+        printf("Using FCFS crossing policy\n");
+    } else {
+        fprintf(stderr, "Invalid crossing policy: %s\n", argv[1]);
+        exit(1);
+    }
+
     vehicle_info vehicles[13] = {
         {0, 0.0, 'N'},
         {1, 1.0, 'N'},
@@ -59,5 +89,6 @@ int main(int argc, char *argv[]) {
         {11, 11.0, 'N'},
         {12, 12.0, 'N'}
     };
+
     return 0;
 }
