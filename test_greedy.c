@@ -4,6 +4,7 @@
 // These variables represent the current bridge state.
 static int bridge_direction = -1;
 static int bridge_count = 0;
+static int south_waiting_count = 0;
 
 // Same Greedy rules used in onelanebridge.c.
 // This is a separate test so we do not change the team's code.
@@ -43,6 +44,17 @@ int main(void) {
     bridge_direction = 0;
     printf("Test 4 (opposite direction): %s\n",
            !CanEnterGreedy(1) ? "PASS" : "FAIL");
+
+    
+// Test 5: Greedy allows entry even when opposite vehicles are waiting.
+// Two northbound vehicles are crossing, and two southbound vehicles are waiting.
+bridge_count = 2;
+bridge_direction = 0;
+south_waiting_count = 2;
+
+printf("Test 5 (opposite vehicles waiting): %s\n",
+       CanEnterGreedy(0) ? "PASS" : "FAIL");
+
 
     return 0;
 }
