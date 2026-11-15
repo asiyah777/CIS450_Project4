@@ -22,7 +22,23 @@ typedef struct _waiting_vehicle {
 static int bridge_direction = -1; // Direction of vehicles currently on the bridge (-1 for none, 0 for north, 1 for south)
 static int bridge_count = 0; // Number of vehicles currently on the bridge
 static int north_waiting_count = 0; // Number of vehicles waiting to cross from the north
-static int south_waiting_count = 0; // Number of vehicles waiting to cross from the south
+
+// Checks if a vehicle can enter using the Greedy policy.
+// The bridge can hold up to 3 vehicles going the same direction.
+int CanEnterGreedy(int direction) {
+    // If the bridge is empty, the vehicle can enter.
+    if (bridge_count == 0) {
+        return 1;
+    }
+
+    // If there is space and the direction matches, it can enter.
+    if (bridge_count < 3 && bridge_direction == direction) {
+        return 1;
+    }
+
+    // Otherwise, the vehicle must wait.
+    return 0;
+}
 
 // Queues for vehicles waiting to cross the bridge
 waiting_vehicle north_waiting[13];
