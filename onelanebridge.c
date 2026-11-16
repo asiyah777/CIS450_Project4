@@ -93,12 +93,30 @@ static vehicle_info *DequeueVehicle(vehicle_queue *queue)
 }
 
 // TO DO:
+
 void ArriveBridge(vehicle_info *ti)
 {
     Sem_Wait(&bridgeMutex);
+
+    // Greedy policy: let the vehicle enter if the bridge has room
+    // and all vehicles are traveling in the same direction.
+    if (crossing_policy == GREEDY && CanEnterGreedy(ti->dir)) {
+        bridge_count++;
+        bridge_direction = ti->dir;
+
+        // Give this vehicle permission to cross.
+        Sem_Post(&ti->permission);
+    } else {
+        // Otherwise, add the vehicle to its direction's waiting queue.
+        EnqueueVehicle(&waitingQueues[ti->dir], ti);
+    }
+
     Sem_Post(&bridgeMutex);
+
+    // Wait until this vehicle has permission to cross.
     Sem_Wait(&ti->permission);
 }
+
 
 
 // TO DO:
