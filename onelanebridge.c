@@ -147,7 +147,7 @@ if (bridge_count == 0) {
     } else {
         direction = SOUTH;
     }
-}
+
 
      } else {
          // If vehicles are crossing, only allow the same direction.
