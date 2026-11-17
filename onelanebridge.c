@@ -30,9 +30,29 @@ typedef struct _vehicle_queue {
 // Shared key resouces: direction of traffic on the brdige, vehicles on the bridge, and waiting queues
 static int bridge_direction = -1; // Direction of vehicles currently on the bridge (-1 for none, 0 for north, 1 for south)
 static int bridge_count = 0; // Number of vehicles currently on the bridge
+// Shared variables for synchronization
 static semaphore_t bridgeMutex;
 static vehicle_queue waitingQueues[2];
 static int crossing_policy = GREEDY;
+
+// Checks if a vehicle can enter using the Greedy policy.
+// Up to 3 vehicles can cross if they are going the same direction.
+int CanEnterGreedy(int direction)
+{
+    // If the bridge is empty, the vehicle can enter.
+    if (bridge_count == 0) {
+        return 1;
+    }
+
+    // Allow another vehicle if there is space and directions match.
+    if (bridge_count < MAX_ON_BRIDGE && bridge_direction == direction) {
+        return 1;
+    }
+
+    // Otherwise, the vehicle must wait.
+    return 0;
+}
+
 
 static const char *DirectionName(int dir)
 {
@@ -73,12 +93,81 @@ static vehicle_info *DequeueVehicle(vehicle_queue *queue)
 }
 
 // TO DO:
+
 void ArriveBridge(vehicle_info *ti)
 {
     Sem_Wait(&bridgeMutex);
+
+    // Greedy policy: let the vehicle enter if the bridge has room
+    // and all vehicles are traveling in the same direction.
+    if (crossing_policy == GREEDY && CanEnterGreedy(ti->dir)) {
+        bridge_count++;
+        bridge_direction = ti->dir;
+
+        // Give this vehicle permission to cross.
+        Sem_Post(&ti->permission);
+    } else {
+        // Otherwise, add the vehicle to its direction's waiting queue.
+        EnqueueVehicle(&waitingQueues[ti->dir], ti);
+    }
+
     Sem_Post(&bridgeMutex);
+
+    // Wait until this vehicle has permission to cross.
     Sem_Wait(&ti->permission);
 }
+
+
+ // Gives waiting vehicles permission to cross using Greedy.
+ // This function must be called while bridgeMutex is locked.
+ void WakeUpGreedy(void)
+ {
+     int direction;
+
+     
+if (bridge_count == 0) {
+    // If nobody is waiting, there is nothing to do.
+    if (waitingQueues[NORTH].count == 0 &&
+        waitingQueues[SOUTH].count == 0) {
+        return;
+    }
+
+    // If both directions have waiting vehicles, choose
+    // the direction of the vehicle that arrived first.
+    if (waitingQueues[NORTH].count > 0 &&
+        waitingQueues[SOUTH].count > 0) {
+        if (waitingQueues[NORTH].head->id <
+            waitingQueues[SOUTH].head->id) {
+            direction = NORTH;
+        } else {
+            direction = SOUTH;
+        }
+    } else if (waitingQueues[NORTH].count > 0) {
+        direction = NORTH;
+    } else {
+        direction = SOUTH;
+    }
+
+
+     } else {
+         // If vehicles are crossing, only allow the same direction.
+         direction = bridge_direction;
+     }
+
+     // Let waiting vehicles enter until the bridge is full.
+     while (waitingQueues[direction].count > 0 &&
+            CanEnterGreedy(direction)) {
+
+         vehicle_info *nextVehicle =
+             DequeueVehicle(&waitingQueues[direction]);
+
+         bridge_direction = direction;
+         bridge_count++;
+
+         // Wake up this vehicle so it can start crossing.
+         Sem_Post(&nextVehicle->permission);
+     }
+ }
 
 
 // TO DO:
@@ -94,18 +183,27 @@ void CrossBridge(vehicle_info *ti)
 }
 
 // TO DO:
+
 void ExitBridge(vehicle_info *ti)
 {
     Sem_Wait(&bridgeMutex);
 
+    // One vehicle has finished crossing.
     bridge_count--;
 
+    // If the bridge is empty, reset its direction.
     if (bridge_count == 0) {
         bridge_direction = -1;
     }
 
+    // Greedy: allow waiting vehicles to enter when space is available.
+    if (crossing_policy == GREEDY) {
+        WakeUpGreedy();
+    }
+
     Sem_Post(&bridgeMutex);
 }
+
 
 void *VehicleAction(void *arg)
 {
