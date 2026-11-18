@@ -11,6 +11,7 @@
 #define MAX_ON_BRIDGE 3
 #define CROSSING_TIME 5.0
 
+
 // Vehicle information structure taken and modified from assignment instructions
 typedef struct _vehicle_info {
     int id; // vehicle ID
@@ -18,6 +19,7 @@ typedef struct _vehicle_info {
     double inter_arrival_t; // inter-arrival time before next vehicle
     semaphore_t permission; // ADDED: If vehicle has permission to cross
     struct _vehicle_info *next; // ADDED: Next vehicle in respective queue
+    unsigned long arrival_order; // ADDED: Order of arrival for FCFS policy
 } vehicle_info;
 
 // FIFO queue for waiting cars
@@ -34,6 +36,9 @@ static int bridge_count = 0; // Number of vehicles currently on the bridge
 static semaphore_t bridgeMutex;
 static vehicle_queue waitingQueues[2];
 static int crossing_policy = GREEDY;
+
+// Arrivals also trigger FCFS admission while holding bridgeMutex.
+static void WakeUpFCFS(void);
 
 // Checks if a vehicle can enter using the Greedy policy.
 // Up to 3 vehicles can cross if they are going the same direction.
@@ -54,21 +59,47 @@ int CanEnterGreedy(int direction)
 }
 
 
-static const char *DirectionName(int dir)
+// Return the one-letter direction used in the assignment's expected output.
+static char DirectionName(int dir)
 {
-    return dir == NORTH ? "North" : "South";
+    return dir == NORTH ? 'N' : 'S';
 }
 
 static void EnqueueVehicle(vehicle_queue *queue, vehicle_info *vehicle)
 {
     vehicle->next = NULL;
 
-    if (queue->tail == NULL) {
-        queue->head = vehicle;
-        queue->tail = vehicle;
+    // FCFS keeps vehicles in their assigned arrival order.
+    if (crossing_policy == FCFS) {
+        vehicle_info *current = queue->head;
+        vehicle_info *previous = NULL;
+
+        while (current != NULL &&
+               current->arrival_order < vehicle->arrival_order) {
+            previous = current;
+            current = current->next;
+        }
+
+        if (previous == NULL) {
+            queue->head = vehicle;
+        } else {
+            previous->next = vehicle;
+        }
+
+        vehicle->next = current;
+
+        if (current == NULL) {
+            queue->tail = vehicle;
+        }
     } else {
-        queue->tail->next = vehicle;
-        queue->tail = vehicle;
+        // Greedy keeps the original FIFO queue.
+        if (queue->tail == NULL) {
+            queue->head = vehicle;
+            queue->tail = vehicle;
+        } else {
+            queue->tail->next = vehicle;
+            queue->tail = vehicle;
+        }
     }
 
     queue->count++;
@@ -92,14 +123,12 @@ static vehicle_info *DequeueVehicle(vehicle_queue *queue)
     return vehicle;
 }
 
-// TO DO:
 
 void ArriveBridge(vehicle_info *ti)
 {
     Sem_Wait(&bridgeMutex);
 
-    // Greedy policy: let the vehicle enter if the bridge has room
-    // and all vehicles are traveling in the same direction.
+    // Greedy policy: let the vehicle enter if the bridge has room and all vehicles are traveling in the same direction.
     if (crossing_policy == GREEDY && CanEnterGreedy(ti->dir)) {
         bridge_count++;
         bridge_direction = ti->dir;
@@ -107,8 +136,11 @@ void ArriveBridge(vehicle_info *ti)
         // Give this vehicle permission to cross.
         Sem_Post(&ti->permission);
     } else {
-        // Otherwise, add the vehicle to its direction's waiting queue.
+        // FCFS policy: enqueue the vehicle in the appropriate waiting queue.
         EnqueueVehicle(&waitingQueues[ti->dir], ti);
+        if (crossing_policy == FCFS) {
+            WakeUpFCFS();
+        }
     }
 
     Sem_Post(&bridgeMutex);
@@ -120,7 +152,7 @@ void ArriveBridge(vehicle_info *ti)
 
  // Gives waiting vehicles permission to cross using Greedy.
  // This function must be called while bridgeMutex is locked.
- void WakeUpGreedy(void)
+void WakeUpGreedy(void)
  {
      int direction;
 
@@ -170,19 +202,78 @@ if (bridge_count == 0) {
  }
 
 
-// TO DO:
+
+// FCFS admits vehicles in arrival order.
+// This function must be called while bridgeMutex is locked.
+static void WakeUpFCFS(void)
+{
+    int direction;
+
+    // If the bridge is empty, the oldest waiting vehicle chooses the direction.
+    if (bridge_count == 0) {
+        if (waitingQueues[NORTH].count == 0 &&
+            waitingQueues[SOUTH].count == 0) {
+            return;
+        }
+
+        if (waitingQueues[NORTH].count == 0) {
+            direction = SOUTH;
+        } else if (waitingQueues[SOUTH].count == 0) {
+            direction = NORTH;
+        } else {
+            direction =
+                waitingQueues[NORTH].head->arrival_order <
+                waitingQueues[SOUTH].head->arrival_order
+                ? NORTH : SOUTH;
+        }
+    } else {
+        // Vehicles already on the bridge determine its current direction.
+        direction = bridge_direction;
+    }
+
+    // Admit vehicles while there is room and FCFS order is not violated.
+    while (waitingQueues[direction].count > 0 &&
+           CanEnterGreedy(direction)) {
+
+        vehicle_info *nextVehicle = waitingQueues[direction].head;
+
+        // Do not let a vehicle pass an older vehicle waiting in the opposite direction.
+        if (waitingQueues[1 - direction].count > 0 &&
+            nextVehicle->arrival_order >=
+            waitingQueues[1 - direction].head->arrival_order) {
+            break;
+        }
+
+        nextVehicle = DequeueVehicle(&waitingQueues[direction]);
+
+        bridge_direction = direction;
+        bridge_count++;
+
+        // Print FCFS vehicles in the order they are admitted.
+printf("Time %.1f: Vehicle %d (%c) crossing\n",
+       ElapsedTime(), nextVehicle->id,
+       DirectionName(nextVehicle->dir));
+fflush(stdout);
+
+Sem_Post(&nextVehicle->permission);
+    }
+}
+
+
 void CrossBridge(vehicle_info *ti)
 {
-    double startTime = ElapsedTime();
+    // Greedy prints when the vehicle starts crossing.
+    // FCFS already prints when permission is granted.
+    if (crossing_policy == GREEDY) {
+        double startTime = ElapsedTime();
 
-    printf("Time %.1f: Vehicle %d (%s) crossing\n",
-           startTime, ti->id, DirectionName(ti->dir));
-    fflush(stdout);
+        printf("Time %.1f: Vehicle %d (%c) crossing\n",
+               startTime, ti->id, DirectionName(ti->dir));
+        fflush(stdout);
+    }
 
     Spin(CROSSING_TIME);
 }
-
-// TO DO:
 
 void ExitBridge(vehicle_info *ti)
 {
@@ -199,6 +290,8 @@ void ExitBridge(vehicle_info *ti)
     // Greedy: allow waiting vehicles to enter when space is available.
     if (crossing_policy == GREEDY) {
         WakeUpGreedy();
+    } else {
+        WakeUpFCFS();
     }
 
     Sem_Post(&bridgeMutex);
@@ -232,10 +325,12 @@ int main(int argc, char *argv[])
         { .id = 11, .dir = NORTH, .inter_arrival_t = 1.0 },
         { .id = 12, .dir = NORTH, .inter_arrival_t = 0.0 }
     };
+    
 
     const int numVehicles = (int)(sizeof(vehicles) / sizeof(vehicles[0]));
     thread_t threads[sizeof(vehicles) / sizeof(vehicles[0])];
     int i;
+    
 
     if (argc != 2) {
         fprintf(stderr, "Usage: %s <crossing_policy>\n", argv[0]);
@@ -253,11 +348,13 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    // Initialize shared mutex and set each vehicle's permission to 0
-    Sem_Init(&bridgeMutex, 1);
-    for (i = 0; i < numVehicles; i++) {
-        Sem_Init(&vehicles[i].permission, 0);
-    }
+  // Initialize shared mutex and each vehicle's permission semaphore.
+Sem_Init(&bridgeMutex, 1);
+
+for (i = 0; i < numVehicles; i++) {
+    Sem_Init(&vehicles[i].permission, 0);
+    vehicles[i].arrival_order = i;
+}
 
     gStartTime = GetTime();
 
@@ -271,6 +368,9 @@ int main(int argc, char *argv[])
     for (i = 0; i < numVehicles; i++) {
         Thread_Join(&threads[i]);
     }
+
+    for (i = 0; i < numVehicles; i++) {
+    Sem_Destroy(&vehicles[i].permission); }
 
     Sem_Destroy(&bridgeMutex);
     return 0;
